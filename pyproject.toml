@@ -1,0 +1,13 @@
+[project]
+name = "jazzcomp"
+version = "0.1.0"
+description = "A python app to generate jazz drum patterns and bass lines."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "chordparser>=0.4.2",
+    "music21>=9.3.0",
+    "numpy>=2.2.6",
+    "pydub>=0.25.1",
+    "pytest>=8.3.5",
+]
