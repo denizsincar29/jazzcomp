@@ -1,0 +1,213 @@
+from fastapi import FastAPI, Form, Request, BackgroundTasks
+from fastapi.responses import HTMLResponse, FileResponse
+# from fastapi.templating import Jinja2Templates # Not actively used yet
+import uvicorn
+import os
+import shutil # For cleaning up temp files
+import uuid   # For unique filenames
+import subprocess
+import traceback # For detailed error logging
+
+# Imports from other project files
+from bass import ChordProgression
+from comping import JazzComping
+from drums import DrumPattern
+# AudioCombiner is used by DrumPattern, not directly here.
+from music21 import stream, note as m21_note, instrument, environment, chord as m21_chord, dynamics
+
+app = FastAPI()
+
+# Setup Constants and Directories
+msc_path = environment.get("musicxmlPath")
+if not msc_path:
+    print("Warning: MuseScore path not found in music21 environment. WAV generation will fail.")
+    # Depending on strictness, could set a flag or raise error on startup:
+    # raise RuntimeError("MuseScore path not configured, cannot start application.")
+
+TEMP_BASE_DIR = "temp_audio_FastAPI" # Base directory for all temporary files for this app
+os.makedirs(TEMP_BASE_DIR, exist_ok=True)
+
+HTML_FORM = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Jazz Composition Generator</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; }
+        h1 { color: #333; text-align: center; }
+        form { background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        textarea { width: 100%; min-height: 150px; margin-bottom: 10px; padding: 10px; border-radius: 4px; border: 1px solid #ddd; box-sizing: border-box; }
+        input[type="submit"] { background-color: #5cb85c; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        input[type="submit"]:hover { background-color: #4cae4c; }
+        .results { margin-top: 20px; padding: 15px; background-color: #fff; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        audio { width: 100%; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <h1>Jazz Composition Generator</h1>
+    <form action="/generate_jazz_composition/" method="post">
+        <label for="chord_progression">Enter Chord Progression:</label><br>
+        <textarea id="chord_progression" name="chord_progression" rows="10" cols="50" placeholder="e.g.\\nCmaj7 Fmaj7 | G7 Cmaj7\\nAm7 Dm7 | G7sus G7"></textarea><br><br>
+        <input type="submit" value="Generate Composition">
+    </form>
+    <div id="output" class="results" style="display:none;">
+        <h2>Generated Audio:</h2>
+        <audio id="audio_player" controls></audio>
+        <p><a id="download_link" href="#">Download WAV</a></p>
+    </div>
+    <script>
+        // Basic script to handle form submission if we want to do it via AJAX later,
+        // but for now, standard form submission is fine.
+        // Could also be used to show a loading indicator.
+    </script>
+</body>
+</html>
+"""
+
+@app.get("/", response_class=HTMLResponse)
+async def read_root():
+    return HTML_FORM
+
+@app.post("/generate_jazz_composition/") # response_class=FileResponse is set implicitly by returning FileResponse
+async def generate_composition_endpoint(request: Request, chord_progression: str = Form(...)):
+    session_id = str(uuid.uuid4())
+    session_temp_dir = os.path.join(TEMP_BASE_DIR, session_id)
+    os.makedirs(session_temp_dir, exist_ok=True)
+
+    bass_xml_path = os.path.join(session_temp_dir, "bass_line.xml")
+    bass_wav_path = os.path.join(session_temp_dir, "bass_line.wav")
+    comping_xml_path = os.path.join(session_temp_dir, "comping_line.xml")
+    comping_wav_path = os.path.join(session_temp_dir, "comping_line.wav")
+    final_wav_path = os.path.join(session_temp_dir, "final_composition.wav")
+
+    try:
+        if not msc_path:
+            # This check is also at startup, but good to have here for robustness
+            print("Error: MuseScore path not configured at the time of request.")
+            return HTMLResponse("Error: MuseScore path not configured. Cannot generate WAV files.", status_code=500)
+
+        # 1. Parse Chord Progression
+        print(f"Session {session_id}: Parsing chord progression:\n{chord_progression}")
+        prog = ChordProgression.from_string(chord_progression)
+
+        # 2. Generate Bass Line
+        print(f"Session {session_id}: Generating bass line...")
+        bassline_notes = prog.generate_bass_line()
+        bass_stream = stream.Stream()
+        bass_stream.insert(0, instrument.AcousticBass())
+        # bass_stream.insert(0, dynamics.Dynamic("fff")) # Optional dynamics
+        for note_obj in bassline_notes:
+            m21_note_obj = m21_note.Note(note_obj.to_midi()) # Use only MIDI pitch for Note constructor
+            m21_note_obj.duration.quarterLength = note_obj.length
+            bass_stream.append(m21_note_obj)
+
+        if bass_stream.hasMeasures():
+            print(f"Session {session_id}: Writing bass XML to {bass_xml_path}")
+            bass_stream.write('musicxml', fp=bass_xml_path)
+            print(f"Session {session_id}: Converting bass XML to WAV at {bass_wav_path} using {msc_path}")
+            subprocess.run([msc_path, bass_xml_path, '-o', bass_wav_path], check=True, capture_output=True)
+            print(f"Session {session_id}: Bass WAV generated.")
+        else:
+            print(f"Session {session_id}: Bass stream empty or invalid, skipping WAV generation for bass.")
+
+
+        # 3. Generate Comping
+        print(f"Session {session_id}: Generating comping...")
+        comping_generator = JazzComping(prog)
+        comping_voicings = comping_generator.generate_comping()
+        comping_stream = stream.Stream()
+        comping_stream.insert(0, instrument.Piano())
+        for voicing in comping_voicings:
+            if voicing: # Ensure voicing is not empty
+                midi_numbers = [n.to_midi() for n in voicing]
+                duration_qs = voicing[0].length # Assuming all notes in a voicing have same length
+                m21_chord_obj = m21_chord.Chord(midi_numbers)
+                m21_chord_obj.duration.quarterLength = duration_qs
+                comping_stream.append(m21_chord_obj)
+
+        if comping_stream.hasMeasures():
+            print(f"Session {session_id}: Writing comping XML to {comping_xml_path}")
+            comping_stream.write('musicxml', fp=comping_xml_path)
+            print(f"Session {session_id}: Converting comping XML to WAV at {comping_wav_path} using {msc_path}")
+            subprocess.run([msc_path, comping_xml_path, '-o', comping_wav_path], check=True, capture_output=True)
+            print(f"Session {session_id}: Comping WAV generated.")
+        else:
+            print(f"Session {session_id}: Comping stream empty or invalid, skipping WAV generation for comping.")
+
+
+        # 4. Generate Drums and Combine
+        print(f"Session {session_id}: Generating drums and combining audio...")
+        # Calculate number of bars based on progression.
+        # list(prog) expands sections if prog is iterable and handles sections
+        expanded_prog_items = list(prog)
+        total_quarters = sum(item.duration for item in expanded_prog_items if item.is_chord and hasattr(item, 'duration'))
+
+        num_bars = (int(total_quarters) + 3) // 4 # Assuming 4/4 time
+        if num_bars == 0 and total_quarters > 0 : num_bars = 1 # Min 1 bar if there are notes
+        if num_bars == 0: # Default to 4 bars if no chords or durationless items.
+            print(f"Session {session_id}: No calculable bars from progression, defaulting to 4 bars for drums.")
+            num_bars = 4
+
+        print(f"Session {session_id}: Calculated {total_quarters} total quarters, resulting in {num_bars} bars for drums.")
+
+        tempo = 120
+        num_quarters_per_bar = 4
+
+        drum_machine = DrumPattern(tempo=tempo, num_quarters=num_quarters_per_bar)
+        # create_pattern populates drum_machine.combiner with drum hits
+        drum_machine.create_pattern(bars=num_bars)
+        print(f"Session {session_id}: Drum pattern created with {len(drum_machine.combiner.sounds)} sound events.")
+
+        if os.path.exists(bass_wav_path):
+            print(f"Session {session_id}: Adding bass WAV to drum combiner.")
+            drum_machine.combiner.place_at(bass_wav_path, 0, 0, volume_step=10.0)
+        else:
+            print(f"Session {session_id}: Bass WAV not found at {bass_wav_path}, not adding to mix.")
+
+        if os.path.exists(comping_wav_path):
+            print(f"Session {session_id}: Adding comping WAV to drum combiner.")
+            drum_machine.combiner.place_at(comping_wav_path, 0, 0, volume_step=8.0)
+        else:
+            print(f"Session {session_id}: Comping WAV not found at {comping_wav_path}, not adding to mix.")
+
+        print(f"Session {session_id}: Exporting final combined audio to {final_wav_path}")
+        drum_machine.combiner.export(final_wav_path)
+        print(f"Session {session_id}: Final WAV exported.")
+
+        # 5. Return FileResponse and schedule cleanup
+        background_tasks_for_cleanup = BackgroundTasks()
+        # Add task to remove the entire session directory
+        background_tasks_for_cleanup.add_task(shutil.rmtree, path=session_temp_dir)
+        print(f"Session {session_id}: Scheduled cleanup of {session_temp_dir}")
+
+        return FileResponse(final_wav_path,
+                            media_type='audio/wav',
+                            filename='jazz_composition.wav', # Suggested filename for client
+                            background=background_tasks_for_cleanup)
+
+    except FileNotFoundError as e:
+        # Specific error for MuseScore path
+        if msc_path and str(e.filename) == msc_path: # Check if msc_path is not None
+             print(f"Session {session_id}: MuseScore executable not found at: {msc_path}. Error: {e}")
+             # Clean up before returning, as FileResponse background task won't run
+             if os.path.exists(session_temp_dir): shutil.rmtree(session_temp_dir)
+             return HTMLResponse(f"Error: MuseScore executable not found at '{msc_path}'. Please configure it correctly.", status_code=500)
+        print(f"Session {session_id}: FileNotFoundError in generation: {e}")
+        traceback.print_exc()
+        if os.path.exists(session_temp_dir): shutil.rmtree(session_temp_dir)
+        return HTMLResponse(f"Error during generation: File not found - {e.filename}", status_code=500)
+    except subprocess.CalledProcessError as e:
+        print(f"Session {session_id}: Error during MuseScore conversion. Return code: {e.returncode}")
+        print(f"Stdout: {e.stdout.decode() if e.stdout else 'N/A'}")
+        print(f"Stderr: {e.stderr.decode() if e.stderr else 'N/A'}")
+        traceback.print_exc()
+        if os.path.exists(session_temp_dir): shutil.rmtree(session_temp_dir)
+        return HTMLResponse(f"Error during audio conversion (MuseScore): {e.cmd} failed. Stderr: {e.stderr.decode() if e.stderr else 'N/A'}", status_code=500)
+    except Exception as e:
+        print(f"Session {session_id}: An unexpected error occurred: {e}")
+        traceback.print_exc()
+        if os.path.exists(session_temp_dir): shutil.rmtree(session_temp_dir)
+        return HTMLResponse(f"An unexpected error occurred during generation: {str(e)}", status_code=500)
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)
