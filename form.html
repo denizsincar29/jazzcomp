@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Jazz Composition Generator</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; }
+        h1 { color: #333; text-align: center; }
+        form { background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        textarea { width: 100%; min-height: 150px; margin-bottom: 10px; padding: 10px; border-radius: 4px; border: 1px solid #ddd; box-sizing: border-box; }
+        input[type="submit"] { background-color: #5cb85c; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        input[type="submit"]:hover { background-color: #4cae4c; }
+        .results { margin-top: 20px; padding: 15px; background-color: #fff; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        audio { width: 100%; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <h1>Jazz Composition Generator</h1>
+    <form action="/generate_jazz_composition/" method="post">
+        <label for="chord_progression">Enter Chord Progression:</label><br>
+        <textarea id="chord_progression" name="chord_progression" rows="10" cols="50" placeholder="e.g.\\nCmaj7 Fmaj7 | G7 Cmaj7\\nAm7 Dm7 | G7sus G7"></textarea><br><br>
+        <input type="submit" value="Generate Composition">
+    </form>
+    <div id="output" class="results" style="display:none;">
+        <h2>Generated Audio:</h2>
+        <audio id="audio_player" controls></audio>
+        <p><a id="download_link" href="#">Download WAV</a></p>
+    </div>
+</body>
+</html>

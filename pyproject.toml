@@ -6,8 +6,11 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "chordparser>=0.4.2",
+    "fastapi>=0.115.12",
     "music21>=9.3.0",
     "numpy>=2.2.6",
     "pydub>=0.25.1",
     "pytest>=8.3.5",
+    "python-multipart>=0.0.20",
+    "uvicorn>=0.34.3",
 ]

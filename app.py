@@ -10,7 +10,7 @@ import traceback # For detailed error logging
 # Imports from other project files
 from bass import ChordProgression
 from drums import DrumPattern
-from music21 import stream, note as m21_note, instrument, environment, chord as m21_chord, dynamics
+from music21 import stream, note as m21_note, instrument, environment
 
 app = FastAPI()
 
@@ -22,44 +22,11 @@ if not msc_path:
 TEMP_BASE_DIR = "temp_audio_FastAPI"
 os.makedirs(TEMP_BASE_DIR, exist_ok=True)
 
-HTML_FORM = """
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Jazz Composition Generator</title>
-    <style>
-        body { font-family: sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; }
-        h1 { color: #333; text-align: center; }
-        form { background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
-        textarea { width: 100%; min-height: 150px; margin-bottom: 10px; padding: 10px; border-radius: 4px; border: 1px solid #ddd; box-sizing: border-box; }
-        input[type="submit"] { background-color: #5cb85c; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
-        input[type="submit"]:hover { background-color: #4cae4c; }
-        .results { margin-top: 20px; padding: 15px; background-color: #fff; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
-        audio { width: 100%; margin-top: 10px; }
-    </style>
-</head>
-<body>
-    <h1>Jazz Composition Generator</h1>
-    <form action="/generate_jazz_composition/" method="post">
-        <label for="chord_progression">Enter Chord Progression:</label><br>
-        <textarea id="chord_progression" name="chord_progression" rows="10" cols="50" placeholder="e.g.\\nCmaj7 Fmaj7 | G7 Cmaj7\\nAm7 Dm7 | G7sus G7"></textarea><br><br>
-        <input type="submit" value="Generate Composition">
-    </form>
-    <div id="output" class="results" style="display:none;">
-        <h2>Generated Audio:</h2>
-        <audio id="audio_player" controls></audio>
-        <p><a id="download_link" href="#">Download WAV</a></p>
-    </div>
-    <script>
-        // Script placeholder
-    </script>
-</body>
-</html>
-"""
-
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
-    return HTML_FORM
+    # from file form.html
+    with open("form.html", "r") as file:
+        return file.read()
 
 @app.post("/generate_jazz_composition/")
 async def generate_composition_endpoint(request: Request, chord_progression: str = Form(...)):
@@ -87,10 +54,10 @@ async def generate_composition_endpoint(request: Request, chord_progression: str
         bass_stream.insert(0, instrument.AcousticBass())
         for note_obj in bassline_notes:
             m21_note_obj = m21_note.Note(note_obj.to_midi())
-            m21_note_obj.duration.quarterLength = note_obj.length
+            m21_note_obj.duration.quarterLength = note_obj.length/2
             bass_stream.append(m21_note_obj)
 
-        if bass_stream.hasMeasures():
+        if len(bass_stream) > 0:
             print(f"Session {session_id}: Writing bass XML to {bass_xml_path}")
             bass_stream.write('musicxml', fp=bass_xml_path)
             print(f"Session {session_id}: Converting bass XML to WAV at {bass_wav_path} using {msc_path}")
@@ -99,8 +66,6 @@ async def generate_composition_endpoint(request: Request, chord_progression: str
         else:
             print(f"Session {session_id}: Bass stream empty or invalid, skipping WAV generation for bass.")
 
-
-        # Comping functionality completely removed.
 
 
         # 4. Generate Drums and Combine
@@ -121,15 +86,13 @@ async def generate_composition_endpoint(request: Request, chord_progression: str
 
         drum_machine = DrumPattern(tempo=tempo, num_quarters=num_quarters_per_bar)
         drum_machine.create_pattern(bars=num_bars)
-        print(f"Session {session_id}: Drum pattern created with {len(drum_machine.combiner.sounds)} sound events.")
+        print(f"Session {session_id}: Drum pattern created with {len(drum_machine.combiner.main_audio)} sound ms.")
 
         if os.path.exists(bass_wav_path):
             print(f"Session {session_id}: Adding bass WAV to drum combiner.")
             drum_machine.combiner.place_at(bass_wav_path, 0, 0, volume_step=10.0)
         else:
             print(f"Session {session_id}: Bass WAV not found at {bass_wav_path}, not adding to mix.")
-
-        # Comping WAV addition to combiner completely removed.
 
         print(f"Session {session_id}: Exporting final combined audio to {final_wav_path}")
         drum_machine.combiner.export(final_wav_path)
@@ -147,10 +110,10 @@ async def generate_composition_endpoint(request: Request, chord_progression: str
 
     except FileNotFoundError as e:
         if msc_path and str(e.filename) == msc_path:
-             print(f"Session {session_id}: MuseScore executable not found at: {msc_path}. Error: {e}")
-             # Clean up before returning, as FileResponse background task won't run. This is important.
-             if os.path.exists(session_temp_dir): shutil.rmtree(session_temp_dir)
-             return HTMLResponse(f"Error: MuseScore executable not found at '{msc_path}'. Please configure it correctly.", status_code=500)
+            print(f"Session {session_id}: MuseScore executable not found at: {msc_path}. Error: {e}")
+            # Clean up before returning, as FileResponse background task won't run. This is important.
+            if os.path.exists(session_temp_dir): shutil.rmtree(session_temp_dir)
+            return HTMLResponse(f"Error: MuseScore executable not found at '{msc_path}'. Please configure it correctly.", status_code=500)
         print(f"Session {session_id}: FileNotFoundError in generation: {e}")
         traceback.print_exc()
         # Clean up before returning.
