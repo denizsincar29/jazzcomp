@@ -6,22 +6,8 @@ from drums import DrumPattern
 
 msc_path = environment.get("musicxmlPath")
 
-test_song = """
-@title Test Song with Sections and Events
-*a
-F7
-Bb7 Bdim7
-F7
-F7b9
-Bb7
-Bdim7
-F7
-D7b9
-G7
-C7b9
-F7 D7b9
-G7 C7b9
-"""
+with open("input.txt", encoding="utf-8") as f:
+    test_song = f.read()
 prog = ChordProgression.from_string(test_song)
 print("\n--- Generating Bass Line ---")
 bassline = prog.generate_bass_line()

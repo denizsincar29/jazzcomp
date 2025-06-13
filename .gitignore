@@ -1,3 +1,4 @@
+protect.md
 # output sound files from the generation script
 *.mid
 *.wav

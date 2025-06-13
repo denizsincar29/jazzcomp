@@ -1,0 +1,14 @@
+@title Test Song with Sections and Events
+*a
+F7
+Bb7 Bdim7
+F7
+F7b9
+Bb7
+Bdim7
+F7
+D7b9
+G7
+C7b9
+F7 D7b9
+G7 C7b9
