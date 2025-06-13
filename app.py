@@ -76,8 +76,8 @@ async def generate_composition_endpoint(request: Request, chord_progression: str
 
     bass_xml_path = os.path.join(session_temp_dir, "bass_line.xml")
     bass_wav_path = os.path.join(session_temp_dir, "bass_line.wav")
-    comping_xml_path = os.path.join(session_temp_dir, "comping_line.xml")
-    comping_wav_path = os.path.join(session_temp_dir, "comping_line.wav")
+    # comping_xml_path = os.path.join(session_temp_dir, "comping_line.xml") # Comping disabled
+    # comping_wav_path = os.path.join(session_temp_dir, "comping_line.wav") # Comping disabled
     final_wav_path = os.path.join(session_temp_dir, "final_composition.wav")
 
     try:
@@ -111,28 +111,28 @@ async def generate_composition_endpoint(request: Request, chord_progression: str
             print(f"Session {session_id}: Bass stream empty or invalid, skipping WAV generation for bass.")
 
 
-        # 3. Generate Comping
-        print(f"Session {session_id}: Generating comping...")
-        comping_generator = JazzComping(prog)
-        comping_voicings = comping_generator.generate_comping()
-        comping_stream = stream.Stream()
-        comping_stream.insert(0, instrument.Piano())
-        for voicing in comping_voicings:
-            if voicing: # Ensure voicing is not empty
-                midi_numbers = [n.to_midi() for n in voicing]
-                duration_qs = voicing[0].length # Assuming all notes in a voicing have same length
-                m21_chord_obj = m21_chord.Chord(midi_numbers)
-                m21_chord_obj.duration.quarterLength = duration_qs
-                comping_stream.append(m21_chord_obj)
+        # # 3. Generate Comping (DISABLED)
+        # print(f"Session {session_id}: Generating comping...")
+        # comping_generator = JazzComping(prog)
+        # comping_voicings = comping_generator.generate_comping()
+        # comping_stream = stream.Stream()
+        # comping_stream.insert(0, instrument.Piano())
+        # for voicing in comping_voicings:
+        #     if voicing: # Ensure voicing is not empty
+        #         midi_numbers = [n.to_midi() for n in voicing]
+        #         duration_qs = voicing[0].length # Assuming all notes in a voicing have same length
+        #         m21_chord_obj = m21_chord.Chord(midi_numbers)
+        #         m21_chord_obj.duration.quarterLength = duration_qs
+        #         comping_stream.append(m21_chord_obj)
 
-        if comping_stream.hasMeasures():
-            print(f"Session {session_id}: Writing comping XML to {comping_xml_path}")
-            comping_stream.write('musicxml', fp=comping_xml_path)
-            print(f"Session {session_id}: Converting comping XML to WAV at {comping_wav_path} using {msc_path}")
-            subprocess.run([msc_path, comping_xml_path, '-o', comping_wav_path], check=True, capture_output=True)
-            print(f"Session {session_id}: Comping WAV generated.")
-        else:
-            print(f"Session {session_id}: Comping stream empty or invalid, skipping WAV generation for comping.")
+        # if comping_stream.hasMeasures():
+        #     print(f"Session {session_id}: Writing comping XML to {comping_xml_path}")
+        #     comping_stream.write('musicxml', fp=comping_xml_path)
+        #     print(f"Session {session_id}: Converting comping XML to WAV at {comping_wav_path} using {msc_path}")
+        #     subprocess.run([msc_path, comping_xml_path, '-o', comping_wav_path], check=True, capture_output=True)
+        #     print(f"Session {session_id}: Comping WAV generated.")
+        # else:
+        #     print(f"Session {session_id}: Comping stream empty or invalid, skipping WAV generation for comping.")
 
 
         # 4. Generate Drums and Combine
@@ -164,11 +164,11 @@ async def generate_composition_endpoint(request: Request, chord_progression: str
         else:
             print(f"Session {session_id}: Bass WAV not found at {bass_wav_path}, not adding to mix.")
 
-        if os.path.exists(comping_wav_path):
-            print(f"Session {session_id}: Adding comping WAV to drum combiner.")
-            drum_machine.combiner.place_at(comping_wav_path, 0, 0, volume_step=8.0)
-        else:
-            print(f"Session {session_id}: Comping WAV not found at {comping_wav_path}, not adding to mix.")
+        # if os.path.exists(comping_wav_path): # Comping disabled
+        #     print(f"Session {session_id}: Adding comping WAV to drum combiner.")
+        #     drum_machine.combiner.place_at(comping_wav_path, 0, 0, volume_step=8.0)
+        # else:
+        #     print(f"Session {session_id}: Comping WAV not found at {comping_wav_path}, not adding to mix.") # Comping disabled
 
         print(f"Session {session_id}: Exporting final combined audio to {final_wav_path}")
         drum_machine.combiner.export(final_wav_path)
